@@ -15,6 +15,8 @@
 							<th>Product</th>
 							<th>Category</th>
 							<th>Price</th>
+							<th>Photo</th>
+							
 						</tr>
 
 						{% for i in products %}
@@ -22,6 +24,7 @@
 								<td>{{i.name}}</td>
 								<td>{{i.category}}</td>
 								<td>{{i.price}}</td>
+								<td>{{i.photo}}</td>
 							</tr>
 						{% endfor %}
 						

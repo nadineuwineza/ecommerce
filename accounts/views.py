@@ -92,6 +92,7 @@ def userPage(request):
 # @allowed_users(allowed_roles=['admin'])
 def products(request):
 	products = Product.objects.all()
+	
 
 	return render(request, 'accounts/products.html', {'products':products})
 
