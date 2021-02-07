@@ -1,163 +1,171 @@
-from django.shortcuts import render, redirect 
-from django.http import HttpResponse
-from django.forms import inlineformset_factory
-from django.contrib.auth.forms import UserCreationForm
-
-from django.contrib.auth import authenticate, login, logout
-
-from django.contrib import messages
-
-from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import Group
-
-# Create your views here.
+from django.shortcuts import render, redirect
+from django.views import View
+from django.contrib.auth.hashers import check_password,make_password
 from .models import *
-from .forms import OrderForm, CreateUserForm
-from .filters import OrderFilter
-# from .decorators import role_required,admin_only
-from django.urls import reverse
 
+class Cart(View):
+	def get(self,request):
+		productList = list(request.session.get('cart').keys())
+		if request.GET.get('increase'):
+			pId = request.GET.get('increase')
+			products = request.session.get('cart')
+			products[pId] += 1
+			request.session['cart'] = products
 
+		if request.GET.get('decrease'):
+			pId = request.GET.get('decrease')
+			products = request.session.get('cart')
+			print(products[pId])
+			if products[pId] > 1:
+				products[pId] -= 1
+				request.session['cart'] = products
+				productList = list(request.session.get('cart').keys())
+			else :
+				del products[pId]
+				request.session['cart'] = products
+				productList = list(request.session.get('cart').keys())
+				
 
-# from .decorators import unauthenticated_user, allowed_users, admin_only
+		allProduct = Product.getProductById(productList)
+		return render(request,'cart.html',{"allProduct":allProduct})
 
-# @unauthenticated_user
-def registerPage(request):
-
-	form = CreateUserForm()
-	if request.method == 'POST':
-		form = CreateUserForm(request.POST)
-		if form.is_valid():
-			user = form.save()
-			username = form.cleaned_data.get('username')
-
-			group = Group.objects.get(name='customer')
-			user.groups.add(group)
-
-			messages.success(request, 'Account was created for ' + username)
-
-			return redirect('login')
-		
-
-	context = {'form':form}
-	return render(request, 'accounts/register.html', context)
-
-# @unauthenticated_user
-def loginPage(request):
-
-	if request.method == 'POST':
-		username = request.POST.get('username')
-		password =request.POST.get('password')
-
-		user = authenticate(request, username=username, password=password)
-
-		if user is not None:
-			login(request, user)
-			return redirect('home')
-		else:
-			messages.info(request, 'Username OR password is incorrect')
-
-	context = {}
-	return render(request, 'accounts/login.html', context)
-
-def logoutUser(request):
-	logout(request)
-	return redirect('login')
-
-@login_required(login_url='login')
-# @admin_only
-def home(request):
-	# if request.role == 'Admin'
-	orders = Order.objects.all()
-	customers = Customer.objects.all()
-
-	total_customers = customers.count()
-
-	total_orders = orders.count()
-	delivered = orders.filter(status='Delivered').count()
-	pending = orders.filter(status='Pending').count()
-
-	context = {'orders':orders, 'customers':customers,
-	'total_orders':total_orders,'delivered':delivered,
-	'pending':pending }
-
-	return render(request, 'accounts/dashboard.html', context)
-
-def userPage(request):
-	context = {}
-	return render(request, 'accounts/user.html', context)
-
-
-@login_required(login_url='login')
-# @allowed_users(allowed_roles=['admin'])
-def products(request):
-	products = Product.objects.all()
+class Checkout(View):
+	def get(self,request):
+		return redirect('cart')
 	
+	def post(self,request):
+		address = request.POST.get('address')
+		phone = request.POST.get('phone')
+		cart = request.session.get('cart')
+		products = Product.getProductById(list(cart.keys()))
+		customer = request.session.get('customer')
+		print(address,phone,cart,products,customer)
 
-	return render(request, 'accounts/products.html', {'products':products})
+		for product in products:
+			newOrder = Order(
+					product=product,
+					customer=Customer(id=customer),
+					quantity=cart[str(product.id)],
+					price=product.price,
+					address=address,
+					phone=phone,
+				)
+			newOrder.save()
 
-@login_required(login_url='login')
-# @allowed_users(allowed_roles=['admin'])
-def customer(request, pk_test):
-	customer = Customer.objects.get(id=pk_test)
+		request.session['cart'] = {}
+		return redirect('order')
 
-	orders = customer.order_set.all()
-	order_count = orders.count()
+class Home(View):
 
-	myFilter = OrderFilter(request.GET, queryset=orders)
-	orders = myFilter.qs 
+	def get(self,request):
+		cart = request.session.get('cart')
+		categories = Category.getAllCategory()
+		products = Product.getAllProduct().order_by('-id')
 
-	context = {'customer':customer, 'orders':orders, 'order_count':order_count,
-	'myFilter':myFilter}
-	return render(request, 'accounts/customer.html',context)
+		if request.GET.get('id'):
+			filterProductById = Product.objects.get(id=int(request.GET.get('id')))
+			return render(request, 'productDetail.html',{"product":filterProductById,"categories":categories})
 
-@login_required(login_url='login')
-# @allowed_users(allowed_roles=['admin'])
-def createOrder(request, pk):
-	OrderFormSet = inlineformset_factory(Customer, Order, fields=('product', 'status'), extra=10 )
-	customer = Customer.objects.get(id=pk)
-	formset = OrderFormSet(queryset=Order.objects.none(),instance=customer)
-	#form = OrderForm(initial={'customer':customer})
-	if request.method == 'POST':
-		#print('Printing POST:', request.POST)
-		form = OrderForm(request.POST)
-		formset = OrderFormSet(request.POST, instance=customer)
-		if formset.is_valid():
-			formset.save()
-			return redirect('/')
+		if not cart:
+			request.session['cart'] = {}
 
-	context = {'form':formset}
-	return render(request, 'accounts/order_form.html', context)
+		if request.GET.get('category_id'):
+			filterProduct = Product.getProductByFilter(request.GET['category_id'])
+			return render(request, 'home.html',{"products":filterProduct,"categories":categories})
 
-@login_required(login_url='login')
-# @allowed_users(allowed_roles=['admin'])
-def updateOrder(request, pk):
+		return render(request, 'home.html',{"products":products,"categories":categories})
 
-	order = Order.objects.get(id=pk)
-	form = OrderForm(instance=order)
+	def post(self,request):
+		product = request.POST.get('product')
 
-	if request.method == 'POST':
-		form = OrderForm(request.POST, instance=order)
-		if form.is_valid():
-			form.save()
-			return redirect('/')
+		cart = request.session.get('cart')
+		if cart:
+			quantity = cart.get(product)
+			if quantity:
+				cart[product] = quantity+1
+			else:
+				cart[product] = 1
+		else:
+			cart = {}
+			cart[product] = 1
 
-	context = {'form':form}
-	return render(request, 'accounts/order_form.html', context)
+		print(cart)
+		request.session['cart'] = cart
+		return redirect('cart')
 
-@login_required(login_url='login')
-# @allowed_users(allowed_roles=['admin'])
-def deleteOrder(request, pk):
-	order = Order.objects.get(id=pk)
-	if request.method == "POST":
-		order.delete()
-		return redirect('/')
+class Login(View):
+	return_url = None
 
-	context = {'item':order}
-	return render(request, 'accounts/delete.html', context)
+	def get(self,request):
+		Login.return_url = request.GET.get('return_url')
+		return render(request,'login.html')
+
+	def post(self,request):
+		userData = request.POST
+		customerEmail = Customer.emailExits(userData["email"])
+		if customerEmail:
+			if check_password(userData["password"],customerEmail.password):
+				request.session["customer"] = customerEmail.id
+				if Login.return_url:
+					return HttpResponseRedirect(Login.return_url)
+				else:
+					Login.return_url = None
+					return redirect('home')
+			else:
+				return render(request,'login.html',{"userData":userData,"error":"Email or password doesn't match"})
+		else:
+			return render(request,'login.html',{"userData":userData,"error":"Email or password doesn't match"})
 
 
 
-def userPage(request):
-	context = {}
-	return render(request, 'accounts/user.html', context)
+def logout(request):
+	request.session.clear()
+	return redirect('home')
+
+class OrderView(View):
+	def get(self,request):
+		customer_id = request.session.get('customer')
+		orders = Order.objects.filter(customer=customer_id).order_by("-date").order_by("-id")
+		print(orders)
+		return render(request,'order.html',{"orders":orders})
+
+class Signup(View):
+
+	def get(self,request):
+		return render(request,'signup.html')
+			
+	def post(self,request):
+		userData = request.POST
+		# validate
+		error = self.validateData(userData)
+		if error :
+			return render(request,'signup.html',{"error":error,"userData":userData})
+		else:
+			if Customer.emailExits(userData['email']):
+				error["emailExits_error"] = "Email Already Exits"
+				return render(request,'signup.html',{"error":error,"userData":userData})
+			else:
+				customer = Customer(
+					name=userData['name'],
+					email=userData['email'],
+					phone=userData['phone'],
+					password=make_password(userData['password']),
+				)
+				customer.save()
+				return redirect('home')
+
+	# Validate form method
+	def validateData(self,userData):
+		error = {}
+		if not userData['name'] or not userData['email']  or not userData['phone']  or not userData['password'] or not userData['confirm_password']:
+			error["field_error"] = "All field must be required"
+		elif len(userData['password'])<8 and len(userData['confirm_password'])<8 :
+			error['minPass_error'] = "Password must be 8 char"
+		elif len(userData['name']) > 25 or len(userData['name']) < 3 :
+			error["name_error"] = "Name must be 3-25 charecter"
+		elif len(userData['phone']) != 10:
+			error["phoneNumber_error"] = "Phone number must be 10 charecter."
+		elif userData['password'] != userData['confirm_password']:
+			error["notMatch_error"] = "Password doesn't match"	
+
+		return 

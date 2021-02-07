@@ -1,16 +1,18 @@
-from django.urls import path
+
+from .views import Home,Signup,Login,logout,Cart,Checkout,OrderView 
+from .auth import LoginCheckMiddleware,LogoutCheckMiddleware
+from django.urls import path,include
+from django.contrib.auth import views as as_view
 from . import views
 
-urlpatterns = [
-    path('register/', views.registerPage, name="register"),
-	path('login/', views.loginPage, name="login"),  
-	path('logout/', views.logoutUser, name="logout"),
-    path('', views.home, name="home"),
-    path('products/', views.products, name='products'),
-    path('customer/<str:pk_test>/', views.customer, name="customer"),
-    path('create_order/<str:pk>/', views.createOrder, name="create_order"),
-    path('update_order/<str:pk>/', views.updateOrder, name="update_order"),
-    path('delete_order/<str:pk>/', views.deleteOrder, name="delete_order"),
 
- 
+
+urlpatterns = [
+    path('',Home.as_view(), name='home'),
+    path('logout',LoginCheckMiddleware(logout), name='logout'),
+    path('cart',Cart.as_view(), name='cart'),
+    path('signup',LogoutCheckMiddleware(Signup.as_view()), name='signup'),
+    path('login',LogoutCheckMiddleware(Login.as_view()), name='login'),
+    path('checkout',LoginCheckMiddleware(Checkout.as_view()), name='checkout'),
+    path('order',LoginCheckMiddleware(OrderView.as_view()), name='order'),
 ]
